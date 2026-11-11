@@ -1,129 +1,105 @@
-# artia-apontar
+# artia
 
-Skill do [Claude Code](https://claude.com/claude-code) que lê seus commits do
-git, descobre em qual tarefa você trabalhou cada dia e cria os apontamentos
-correspondentes no [Artia](https://artia.com) — sempre te mostrando uma tabela
-de revisão e pedindo confirmação antes de gravar qualquer coisa.
+Skills do [Claude Code](https://claude.com/claude-code) para o
+[Artia](https://artia.com), sobre um cliente CLI único (`artia.py`, só stdlib).
 
 Nada aqui é software oficial do Artia. É um cliente independente da API
-GraphQL pública deles (`https://api.artia.com/graphql`), construído a partir
-de uma coleção Postman própria.
+GraphQL pública deles (`https://api.artia.com/graphql`).
 
-## Por quê
-
-Apontar horas manualmente todo dia é chato e fácil de esquecer. O git já sabe
-o que você fez e quando — essa skill usa isso como fonte de verdade e só pede
-pra você revisar/ajustar antes de mandar pro Artia.
-
-## Como funciona
-
-1. Lê `git log` dos repositórios configurados, no período pedido
-2. Agrupa commits por `(repositório, branch)` — não por dia isolado, já que
-   commit pode ser raro e passar dias entre um e outro na mesma tarefa
-3. Busca as atividades do projeto no Artia e casa cada branch com a atividade
-   de título mais parecido (top-3 candidatas, sem decidir sozinho em caso de
-   empate)
-4. Preenche o calendário em **dias inteiros** (`dailyHours`, padrão 8h), não
-   por sessão de commit:
-   - 1 tarefa com commit no dia → dia inteiro nela
-   - 2 tarefas com commit no mesmo dia → manhã inteira numa, tarde inteira
-     na outra
-   - dia sem commit nenhum, mas entre dois dias de commit da mesma tarefa →
-     preenche com a mesma tarefa (você trabalhou, só não commitou naquele dia)
-   - fim de semana, ou gap ambíguo entre tarefas diferentes → não propõe nada
-5. Verifica se já existe apontamento naquele dia (nas 3 candidatas, não só a
-   escolhida) pra não duplicar
-6. Mostra uma tabela markdown pra você revisar e editar
-7. Só cria os apontamentos (`createTimeEntry`) depois da sua confirmação
-   explícita
-
-Detalhes completos do fluxo estão em [`SKILL.md`](./SKILL.md).
+| skill | para quê | modelo |
+|---|---|---|
+| [`/artia`](./skills/artia/SKILL.md) | ler card, listar e buscar tarefas, comentar, mudar situação e campos | subagente Haiku (`context: fork`) |
+| [`/artia-apontar`](./skills/artia-apontar/SKILL.md) | apontar horas a partir do `git log`, com tabela de revisão | sessão, só manual |
+| [`/artia-planejar`](./skills/artia-planejar/SKILL.md) | plano de implementação a partir do card, cruzado com o código | sessão |
 
 ## Instalação
 
 ```bash
-git clone git@github.com:samuelrigo/artia-apontar.git ~/.claude/skills/artia-apontar
+git clone <este repo> ~/dev-pessoal/artia
+~/dev-pessoal/artia/install.sh
 ```
 
-(ou copie a pasta pra dentro de `~/.claude/skills/` manualmente)
+`install.sh` cria symlinks em `~/.claude/skills/` para as três skills. Pasta
+que já existir lá com o mesmo nome é movida para
+`~/.claude/skills-backup-<data>/`, não apagada. O cliente fica em
+`~/.claude/skills/artia/artia.py`.
 
-Depois:
+Config:
 
 ```bash
-cp ~/.claude/skills/artia-apontar/config.example.json ~/.config/artia/config.json
+mkdir -p ~/.config/artia
+cp config.example.json ~/.config/artia/config.json
+python3 ~/.claude/skills/artia/artia.py set-credentials --email seu@email
 ```
 
-Edite `~/.config/artia/config.json`:
+`~/.config/artia/config.json`:
 
 - `authorMatch`: nomes/emails que aparecem no seu `git log` como autor
 - `repos`: caminho absoluto de cada repositório → `organizationId`,
   `accountId`, `folderId`:
-  - `organizationId`: aparece na URL do seu perfil no Artia —
+  - `organizationId`: URL do seu perfil —
     `https://app.artia.com/users/edit?organization_id=<ESSE_NÚMERO>`
-  - `accountId` (grupo de trabalho): aparece na URL de qualquer atividade —
+  - `accountId` (grupo de trabalho) e `folderId` (projeto): URL de qualquer
+    atividade —
     `https://app.artia.com/a/<accountId>/f/<folderId>/activities/<activityId>`
-  - `folderId`: com os dois acima, rode
-    `python3 artia.py --org <organizationId> projects --account <accountId>`
-    (ou `folders`) e pegue o `id` do projeto certo
-- `defaults.dailyHours`/`morningStart`/`afternoonStart`: jornada padrão (8h,
-  09:00, 13:00) usada pra preencher os dias — ajuste pro seu horário real
-- `defaults.timeEntryStatusId`: **não** é customizável via `listingCustomStatus`
-  (filtro `statusObject: "TimeEntry"` não retorna nada mesmo quando o id certo
-  existe). Descubra criando 1 apontamento manual na UI do Artia e lendo o
-  `timeEntryStatusId` dele de volta:
-  `python3 artia.py --org <organizationId> time-entries --account <accountId> --activity <ID>`
+- `defaults.dailyHours`/`morningStart`/`afternoonStart`: jornada usada pelo
+  `/artia-apontar`
+- `defaults.timeEntryStatusId`: crie 1 apontamento manual na UI e leia o valor
+  com `artia.py time-entries --account <ID> --activity <ID>`
 
-**Todo comando de `artia.py` precisa de `--org <organizationId>` antes do
-subcomando** — sem isso ele usa um default (`1`) quase certamente errado, e a
-API responde com erros pouco óbvios (`"Comunidade desconhecida"`,
-`"Organização não encontrada"`) mesmo com `accountId`/`folderId` certos.
-
-Exporte suas credenciais do Artia (nunca ficam salvas em arquivo, só em
-variável de ambiente):
-
-```bash
-export ARTIA_EMAIL="seu-email@exemplo.com"
-export ARTIA_PASSWORD="sua-senha"
-```
+Com um único `organizationId` no config, `--org` é opcional. Com mais de um,
+passe `--org <organizationId>` antes do subcomando.
 
 ## Uso
 
 ```
-/artia-apontar hoje --dry-run
-/artia-apontar ontem
-/artia-apontar 2026-07-20..2026-07-22
-/artia-apontar 7d meu-repo
+/artia lê a tarefa 60 do vendas
+/artia minhas tarefas abertas
+/artia muda a 60 do vendas pra em andamento
+/artia-apontar ontem --dry-run
+/artia-planejar vendas 60
 ```
-
-`--dry-run` mostra a tabela sem postar nada. Sem essa flag, a skill ainda
-para e pede confirmação antes de gravar — nunca cria apontamento sozinha.
 
 ## `artia.py`
 
-CLI standalone (só stdlib, sem dependências) que a skill usa por baixo dos
-panos, mas que também funciona sozinho:
+Saída em texto compacto (uma linha por item), pensada para gastar pouco token:
 
 ```
-python3 artia.py login
-python3 artia.py --org <ORG_ID> whoami
-python3 artia.py --org <ORG_ID> projects --account <ID>
-python3 artia.py --org <ORG_ID> folders --account <ID>
-python3 artia.py --org <ORG_ID> activities --folder <ID> --account <ID> --mine
-python3 artia.py --org <ORG_ID> time-entries --account <ID> --activity <ID> --date 2026-07-22
-python3 artia.py --org <ORG_ID> create-entry --account <ID> --activity <ID> --date 2026-07-22 \
-  --start 09:00 --duration 1.5 --status <ID> --obs "..."   # sem --yes = dry-run
-python3 artia.py --org <ORG_ID> raw --query '...'   # qualquer query/mutation GraphQL
+artia.py projetos
+artia.py card [projeto] <tarefa>
+artia.py minhas [projeto] [--abertas]
+artia.py buscar "<texto>" [projeto] [--abertas]
+artia.py status-list
+artia.py comment [projeto] <tarefa> --text "..." [--yes]
+artia.py set-status [projeto] <tarefa> --status "<nome|id>" [--yes]
+artia.py update [projeto] <tarefa> [--responsible X] [--start D] [--end D] [--percent N] [--title T] [--yes]
+```
+
+`[projeto]` é um pedaço do nome ou o id; omitido, vale o projeto do diretório
+atual. `<tarefa>` é o número do título `Tarefa N`.
+
+Saída em JSON, usada pelo `/artia-apontar`:
+
+```
+artia.py login | whoami
+artia.py projects --account <ID>
+artia.py folders --account <ID>
+artia.py activities --folder <ID> --account <ID> --mine
+artia.py time-entries --account <ID> --activity <ID> --date 2026-07-22
+artia.py create-entry --account <ID> --activity <ID> --date D --start 09:00 --duration 1.5 --status <ID> [--yes]
+artia.py raw --query '...'
 ```
 
 ## Segurança
 
-- Senha nunca é gravada em disco — só lida de `ARTIA_EMAIL`/`ARTIA_PASSWORD`
-  no ambiente, a cada login
-- Só o token JWT é cacheado (`~/.cache/artia/token.json`, modo `0600`),
-  expira sozinho
-- `create-entry` exige `--yes` explícito pra gravar; sem isso, só mostra o
-  payload que seria enviado
-- `~/.config/artia/config.json` fica fora de qualquer repositório git
+- Toda escrita (`comment`, `set-status`, `update`, `create-entry`) exige
+  `--yes`; sem ele só mostra o payload. A skill `/artia` roda em dry-run e
+  devolve o comando para a conversa principal confirmar com o usuário.
+- Credenciais em `~/.config/artia/credentials.json` (modo `0600`), gravadas por
+  `set-credentials` com prompt sem eco. Senha nunca vai por argumento nem pelo
+  chat. `ARTIA_EMAIL`/`ARTIA_PASSWORD` no ambiente têm prioridade.
+- Só o token JWT é cacheado (`~/.cache/artia/token.json`, modo `0600`).
+- `~/.config/artia/` fica fora de qualquer repositório git.
 
 ## Licença
 

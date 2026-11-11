@@ -7,7 +7,8 @@ disable-model-invocation: true
 
 # /artia-apontar — apontar horas no Artia a partir do git
 
-Ferramenta: `artia.py` (neste diretório da skill), stdlib-only, sem dependências.
+Ferramenta: `~/.claude/skills/artia/artia.py` (cliente compartilhado com as skills `artia` e
+`artia-planejar`; nos exemplos abaixo, `artia.py` é esse caminho), stdlib-only, sem dependências.
 Cliente CLI pra API GraphQL do Artia (`https://api.artia.com/graphql`).
 
 **Regra de ouro: nunca chamar `create-entry --yes` sem o usuário ter confirmado
@@ -23,11 +24,11 @@ Estrutura: `createdBy`, `authorMatch` (lista de nomes/emails do autor no git log
 `kindOfHours`), `repos` (mapa `caminho_absoluto -> {organizationId, accountId,
 folderId}`). Exemplo em `config.example.json` deste diretório.
 
-**Todo comando abaixo precisa de `--org <organizationId>`** (o organizationId
-do repo, do config). Sem isso, `artia.py` usa o default `1` — quase certamente
+**Passe `--org <organizationId>`** (o organizationId do repo, do config) nos comandos
+abaixo. Sem isso, `artia.py` usa o organizationId do config quando todos os repos
+têm o mesmo; com mais de um (ou config vazio) cai no default `1` — quase certamente
 errado — e a API retorna erros confusos tipo `"Comunidade desconhecida"` ou
-`"Organização não encontrada"` mesmo com accountId/folderId corretos. Já
-aconteceu nessa mesma sessão de desenvolvimento; não repita.
+`"Organização não encontrada"` mesmo com accountId/folderId corretos.
 
 Se `organizationId`/`accountId`/`folderId` de algum repo estiverem `null`: pare
 e peça pro usuário descobrir:
@@ -52,15 +53,31 @@ atividade/data e leia o `timeEntryStatusId` que veio de verdade.
 
 ## 1. Credenciais
 
-`ARTIA_EMAIL` / `ARTIA_PASSWORD` via variável de ambiente. **Nunca** peça pra
-colar a senha no chat, nunca escreva a senha em arquivo, nunca imprima o valor
-de `ARTIA_PASSWORD`. `artia.py login` cacheia só o token JWT (extraído o `exp`
-do próprio token) em `~/.cache/artia/token.json`, modo 0600, curta duração —
-os outros subcomandos reusam esse cache e só re-logam se expirado.
+Mecanismo primário: `~/.config/artia/credentials.json` (modo 0600, texto
+plano — mesmo modelo de `~/.aws/credentials`/`~/.netrc`). `artia.py` lê esse
+arquivo automaticamente em todo subcomando que precisa autenticar; env var
+`ARTIA_EMAIL`/`ARTIA_PASSWORD` continua funcionando como override, com
+prioridade sobre o arquivo, mas **não é o caminho recomendado**: cada chamada
+do Bash tool abre um shell não-interativo novo, que não lê `~/.bashrc`, então
+`export` feito numa chamada não sobrevive pra próxima — é isso que causa
+"exportei mas continua pedindo credencial".
 
-Se as env vars não estiverem setadas, peça pro usuário exportar antes de
-continuar (ex: no `~/.bashrc`/`~/.zshrc` ou só na sessão do terminal) — não
-prossiga sem elas.
+Se `~/.config/artia/credentials.json` não existir e não houver env var
+setada: peça pro usuário rodar, **no terminal real dele** (não colar no
+chat):
+```
+python3 artia.py set-credentials --email <email>
+```
+Isso pede a senha via prompt sem eco (`getpass`) e grava o arquivo 0600.
+Depois disso, todo subcomando (`login`, `activities`, `create-entry`, etc)
+autentica sozinho sem precisar de env var nenhuma.
+
+**Nunca** peça pra colar a senha no chat, nunca passe `--password` como
+argumento de linha de comando (fica no histórico do shell e em `ps`), nunca
+imprima o conteúdo de `credentials.json` nem de `ARTIA_PASSWORD`. `artia.py
+login` cacheia só o token JWT (extraído o `exp` do próprio token) em
+`~/.cache/artia/token.json`, modo 0600, curta duração — os outros
+subcomandos reusam esse cache e só re-logam se expirado.
 
 ## 2. Parse de `$ARGUMENTS`
 
@@ -143,8 +160,8 @@ Monte e mostre uma tabela markdown:
 
 | data | repo/branch | atividade (top-3 candidatas) | início | horas | observação | status |
 |---|---|---|---|---|---|---|
-| 2026-07-22 | meu-repo / feat/tarefa21-... | **29153781 — Título da atividade (Tarefa 21)** / 29153782 / 29153790 | 09:00 | 8 | feat: resumo do que foi commitado... | novo |
-| 2026-07-23 | meu-repo / feat/tarefa21-... | (mesma de cima, dia sem commit — preenchido, ver passo 5.5) | 09:00 | 8 | — | novo |
+| 2026-07-22 | loja-web / feat/tarefa21-... | **1000001 — Tarefa 21 - Exportar relatório** / 1000002 / 1000003 | 09:00 | 8 | feat: permissão de distribuição manual... | novo |
+| 2026-07-23 | loja-web / feat/tarefa21-... | (mesma de cima, dia sem commit — preenchido, ver passo 5.5) | 09:00 | 8 | — | novo |
 
 Quando o dia foi dividido manhã/tarde entre 2 branches, isso vira **2 linhas**
 pro mesmo dia, cada uma com sua atividade, `início` e `horas` (4h cada).
@@ -178,15 +195,16 @@ config estiver incorreto pro fluxo real do usuário (API rejeitar), pare,
 mostre a mensagem de erro decisiva (não o JSON inteiro) e peça o id certo —
 não adivinhe tentando valores em sequência.
 
-Se o projeto tiver alguma convenção própria de log de bugs/erros, registre lá
-também — trate um erro de API/gravação aqui como qualquer outro bug do dia a dia.
+Se o cwd for um repo com `.wolf/` (protocolo OpenWolf do projeto): erro real
+de API/gravação vira entrada em `.wolf/buglog.json` daquele repo, como
+qualquer outro bug.
 
 ## Referência rápida da API (GraphQL, `https://api.artia.com/graphql`)
 
 Toda request autenticada leva `Authorization: Bearer <token>` +
 `OrganizationId: <organizationId>`. `artia.py` monta esse header sozinho, mas
 só com o valor certo se você passar `--org <organizationId>` — sem isso ele
-usa um default (`1`) que raramente é o organizationId real do usuário.
+cai no organizationId do config (ou em `1` se o config tiver mais de um).
 
 - `authenticationByEmail(email, password){ token }`
 - `listingProjects(accountId){ id, name, status, costCenterId }`
