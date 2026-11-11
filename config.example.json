@@ -1,10 +1,21 @@
 {
   "createdBy": "seu-email@artia.com",
-  "authorMatch": ["seu-email@artia.com", "Seu Nome", "seunome"],
+  "authorMatch": [
+    "seu-email@artia.com",
+    "Seu Nome",
+    "seunome"
+  ],
   "defaults": {
-    "dailyHours": 8,
-    "morningStart": "09:00",
-    "afternoonStart": "13:00",
+    "periods": [
+      {
+        "start": "08:00",
+        "end": "12:00"
+      },
+      {
+        "start": "13:30",
+        "end": "18:00"
+      }
+    ],
     "timeEntryStatusId": 4,
     "kindOfHours": "normal"
   },
@@ -14,5 +25,19 @@
       "accountId": 0,
       "folderId": 0
     }
+  },
+  "github": {
+    "user": "seu-usuario-github",
+    "repos": {
+      "org/repo": {
+        "organizationId": 1,
+        "accountId": 0,
+        "folderId": 0
+      }
+    }
+  },
+  "relatorios": {
+    "repo": "seu-usuario-github/artia-apontamentos",
+    "path": "relatorios"
   }
 }

@@ -20,7 +20,7 @@ não contorne isso.
 
 Lê `~/.config/artia/config.json` (fora de qualquer repo git, nunca commitado).
 Estrutura: `createdBy`, `authorMatch` (lista de nomes/emails do autor no git log),
-`defaults` (`dailyHours`, `morningStart`, `afternoonStart`, `timeEntryStatusId`,
+`defaults` (`periods`, `timeEntryStatusId`,
 `kindOfHours`), `repos` (mapa `caminho_absoluto -> {organizationId, accountId,
 folderId}`). Exemplo em `config.example.json` deste diretório.
 
@@ -116,25 +116,29 @@ por score — não decida sozinho quando o placar for ambíguo (top-1 e top-2
 muito próximos): deixe as 3 visíveis na tabela pro usuário escolher. Todos os
 dias que essa branch acabar preenchendo (passo 5) herdam essa mesma escolha.
 
-## 5. Preenchendo o calendário (dia cheio, não sessão)
+## 5. Preenchendo o calendário (por período, nunca dia cheio)
 
-O usuário sempre aponta o dia inteiro (`defaults.dailyHours`, padrão 8h) numa
-tarefa — não estima por intervalo entre commits. Pra cada dia **útil**
-(segunda a sexta) dentro do período pedido:
+O dia de trabalho tem **2 períodos fixos**, em `defaults.periods` (padrão
+`08:00–12:00` = 4h e `13:30–18:00` = 4,5h; o intervalo entre eles é almoço).
+**Nunca** crie um apontamento único cobrindo o dia todo, nem um que atravesse o
+almoço: cada apontamento cabe inteiro dentro de um período, com início e
+duração tirados dele. Não estima por intervalo entre commits. Pra cada dia
+**útil** (segunda a sexta) dentro do período pedido:
 
-1. Liste quais `(repo, branch)` tiveram commit **real** nesse dia.
-2. **1 branch** com commit real → dia inteiro (`dailyHours`) pra ela, começando
-   em `defaults.morningStart`.
-3. **2 branches** com commit real no mesmo dia → a primeira por ordem
-   cronológica do commit leva a manhã (`morningStart`, metade de `dailyHours`),
-   a segunda leva a tarde (`afternoonStart`, a outra metade).
-4. **3+ branches** no mesmo dia (raro) → divide `dailyHours` igualmente entre
-   elas, em blocos sequenciais a partir de `morningStart`.
+1. Liste quais `(repo, branch)` tiveram commit **real** nesse dia, na ordem do
+   primeiro commit.
+2. Distribua as tarefas entre os períodos, em ordem: 1 tarefa ocupa manhã e
+   tarde; com 2 ou mais, cada período recebe um grupo contíguo de tarefas
+   proporcional à sua duração (2 tarefas: uma de manhã, outra à tarde; 3: uma de
+   manhã, duas à tarde; 4: duas e duas).
+3. Dentro do período, divida o tempo igualmente entre as tarefas do grupo, em
+   blocos de 30 min, um após o outro. Nunca dois apontamentos no mesmo horário.
+4. Mesma regra do `diario.py` (`dividir_horarios`): use-o como referência.
 5. **Nenhum commit real** nesse dia, mas ele cai **entre** o primeiro e o
    último dia de commit de uma única branch, e nenhuma outra branch tem
-   commit nesse intervalo → preenche esse dia com a mesma branch, dia
-   inteiro. É o caso "commitei segunda, só commitei de novo quinta, mas
-   trabalhei terça e quarta na mesma tarefa".
+   commit nesse intervalo → preenche manhã e tarde com a mesma branch. É o
+   caso "commitei segunda, só commitei de novo quinta, mas trabalhei terça e
+   quarta na mesma tarefa".
 6. Não se encaixa em nada acima (fim de semana, fora do intervalo de
    qualquer branch, ou gap ambíguo — duas branches diferentes cercando o
    buraco, sem como saber qual continuou) → **não** propõe nada nesse dia.
@@ -142,7 +146,21 @@ tarefa — não estima por intervalo entre commits. Pra cada dia **útil**
 
 Isso é **estimativa de partida** — o usuário edita os números no passo 6.
 
-## 6. Dedupe + tabela de proposta
+## 6. Observação (padrão dos apontamentos reais)
+
+Texto curto, minúsculo, sem ponto final e sem número da tarefa — diz a fase,
+não o conteúdo do commit:
+
+| evidência | observação |
+|---|---|
+| PR aberta no dia | `implementação e abertura de pr` |
+| push depois de review recebida na PR | `implementando mudanças solicitadas na pr` |
+| review/comentário em PR | `revisão de comentários da pr` |
+| push sem PR | `planejamento e implementação da atividade` |
+| sem código (branch criada, comentário no card) | `análise e planejamento da atividade` |
+| dia preenchido sem commit (teste) | `teste da <funcionalidade> [no app/no web]` |
+
+## 6.1 Dedupe + tabela de proposta
 
 Antes de mostrar, rode dedupe contra as **3 candidatas** do grupo (não só a
 top-1) — se o match errar a atividade certa, checar só a top-1 deixa passar
@@ -160,11 +178,14 @@ Monte e mostre uma tabela markdown:
 
 | data | repo/branch | atividade (top-3 candidatas) | início | horas | observação | status |
 |---|---|---|---|---|---|---|
-| 2026-07-22 | loja-web / feat/tarefa21-... | **1000001 — Tarefa 21 - Exportar relatório** / 1000002 / 1000003 | 09:00 | 8 | feat: permissão de distribuição manual... | novo |
-| 2026-07-23 | loja-web / feat/tarefa21-... | (mesma de cima, dia sem commit — preenchido, ver passo 5.5) | 09:00 | 8 | — | novo |
+| 2026-07-22 | loja-web / feat/tarefa21-... | **1000001 — Tarefa 21 - Exportar relatório** / 1000002 / 1000003 | 08:00 | 4 | feat: permissão de distribuição manual... | novo |
+| 2026-07-22 | loja-web / feat/tarefa21-... | (mesma de cima) | 13:30 | 4.5 | feat: permissão de distribuição manual... | novo |
+| 2026-07-23 | loja-web / feat/tarefa21-... | (mesma de cima, dia sem commit — preenchido, ver passo 5.5) | 08:00 | 4 | — | novo |
+| 2026-07-23 | loja-web / feat/tarefa21-... | (mesma de cima, dia sem commit — preenchido, ver passo 5.5) | 13:30 | 4.5 | — | novo |
 
-Quando o dia foi dividido manhã/tarde entre 2 branches, isso vira **2 linhas**
-pro mesmo dia, cada uma com sua atividade, `início` e `horas` (4h cada).
+Todo dia vira **pelo menos 2 linhas** (manhã e tarde), cada uma com sua
+atividade, `início` e `horas`. Se o usuário editar horas ou início, a linha
+continua tendo que caber dentro de um dos períodos.
 
 ## 7. Edição + confirmação
 
@@ -187,9 +208,8 @@ python3 artia.py --org <organizationId> create-entry --account <accountId> --act
   --status <defaults.timeEntryStatusId> --by <createdBy> --kind normal \
   --obs "<observação>" --yes
 ```
-`início` e `horas` vêm da linha da tabela (passo 5): dia inteiro usa
-`morningStart`/`dailyHours`; linha de manhã usa `morningStart`/metade; linha
-de tarde usa `afternoonStart`/metade.
+`início` e `horas` vêm da linha da tabela (passo 5), sempre dentro de um dos
+`defaults.periods` — um `create-entry` por linha, nunca um só pro dia.
 Reporte os `id` criados numa lista curta. Se algum `timeEntryStatusId` da
 config estiver incorreto pro fluxo real do usuário (API rejeitar), pare,
 mostre a mensagem de erro decisiva (não o JSON inteiro) e peça o id certo —
