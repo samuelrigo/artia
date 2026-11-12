@@ -159,8 +159,17 @@ def eventos_do_repo(repo, dia):
 
 def eventos_do_github(usuario, dia, repos):
     alvo = usuario.lower()
-    return [ev for repo in repos for ev in eventos_do_repo(repo, dia)
-            if (ev.get("actor") or {}).get("login", "").lower() == alvo]
+    eventos, falhas = [], []
+    for repo in repos:
+        try:
+            lote = eventos_do_repo(repo, dia)
+        except FalhaDiario as e:
+            falhas.append("%s: eventos do GitHub indisponíveis (%s)" % (repo, str(e)[:160]))
+            continue
+        eventos += [ev for ev in lote if (ev.get("actor") or {}).get("login", "").lower() == alvo]
+    if falhas and len(falhas) == len(repos):
+        raise FalhaDiario("; ".join(falhas))
+    return eventos, falhas
 
 
 def normalizar_evento_github(ev):
@@ -323,8 +332,8 @@ def executar(cfg, dia, gravar):
         atividades_por_folder[folder] = atividades
         movimentos += movimentos_artia(atividades, dia, email, contexto)
 
-    pendencias = []
-    brutos = movimentos_github(eventos_do_github(usuario, dia, repos_github), dia, repos_github)
+    eventos, pendencias = eventos_do_github(usuario, dia, repos_github)
+    brutos = movimentos_github(eventos, dia, repos_github)
     marcar_push_apos_review(brutos, usuario)
     for m in brutos:
         c = repos_github[m["repo"]]
