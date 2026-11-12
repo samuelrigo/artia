@@ -144,10 +144,10 @@ def gh_api(caminho):
     return json.loads(r.stdout or "null")
 
 
-def eventos_do_github(usuario, dia):
+def eventos_do_repo(repo, dia):
     eventos = []
     for pagina in range(1, 4):
-        lote = gh_api("users/%s/events?per_page=100&page=%d" % (usuario, pagina))
+        lote = gh_api("repos/%s/events?per_page=100&page=%d" % (repo, pagina))
         if not lote:
             break
         eventos.extend(lote)
@@ -155,6 +155,12 @@ def eventos_do_github(usuario, dia):
         if mais_antigo.date() < dia:
             break
     return eventos
+
+
+def eventos_do_github(usuario, dia, repos):
+    alvo = usuario.lower()
+    return [ev for repo in repos for ev in eventos_do_repo(repo, dia)
+            if (ev.get("actor") or {}).get("login", "").lower() == alvo]
 
 
 def normalizar_evento_github(ev):
@@ -318,7 +324,7 @@ def executar(cfg, dia, gravar):
         movimentos += movimentos_artia(atividades, dia, email, contexto)
 
     pendencias = []
-    brutos = movimentos_github(eventos_do_github(usuario, dia), dia, repos_github)
+    brutos = movimentos_github(eventos_do_github(usuario, dia, repos_github), dia, repos_github)
     marcar_push_apos_review(brutos, usuario)
     for m in brutos:
         c = repos_github[m["repo"]]
