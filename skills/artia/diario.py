@@ -6,6 +6,8 @@ import json
 import os
 import re
 import subprocess
+import urllib.error
+import urllib.request
 import sys
 from zoneinfo import ZoneInfo
 
@@ -117,7 +119,25 @@ def dividir_horarios(tarefas, periods=None):
     return blocos
 
 
+def github_direto(caminho, token):
+    req = urllib.request.Request("https://api.github.com/" + caminho, headers={
+        "Authorization": "Bearer " + token,
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "artia-diario",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8") or "null")
+    except urllib.error.HTTPError as e:
+        raise FalhaDiario("GitHub %s: HTTP %d %s" % (caminho, e.code, e.read().decode(errors="replace")[:300]))
+    except urllib.error.URLError as e:
+        raise FalhaDiario("GitHub %s: %s" % (caminho, e))
+
+
 def gh_api(caminho):
+    token = os.environ.get("GH_TOKEN")
+    if token:
+        return github_direto(caminho, token)
     r = subprocess.run(["gh", "api", caminho], capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
         raise FalhaDiario("gh api %s: %s" % (caminho, (r.stderr or r.stdout).strip()[:300]))
